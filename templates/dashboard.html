@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Logging Dashboard</title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/progressbar.js"></script>
+    <style>
+        body, html {
+            height: 100%;
+            margin: 0;
+        }
+        .container-fluid {
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        .navbar {
+            background-color: #343a40;
+            color: white;
+            padding: 10px;
+        }
+        .content {
+            flex: 1;
+            display: flex;
+            flex-direction: row;
+            height: 100%;
+        }
+        .left-half {
+            width: 30%;
+            display: flex;
+            flex-direction: column;
+        }
+        .right-half {
+            width: 70%;
+            padding: 20px;
+            overflow-y: auto;
+        }
+        .chart-container {
+            width: 100%;
+            padding: 20px;
+        }
+        #logTableBody {
+            max-height: 100%;
+            overflow-y: auto;
+            display: block;
+        }
+        #logTableBody table {
+            width: 100%;
+            table-layout: fixed;
+        }
+        .progress-container {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 200px;
+        }
+        #progress-bar {
+            width: 200px;
+            height: 200px;
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar">
+        <span class="navbar-brand mb-0 h1">Logging Dashboard</span>
+    </nav>
+    <div class="container-fluid">
+        <div class="content">
+            <div class="left-half">
+                <div class="chart-container">
+                    <canvas id="logChart" width="400" height="200"></canvas>
+                </div>
+                <div class="chart-container">
+                    <h3>Confidence Score</h3>
+                    <div class="progress-container">
+                        <div id="progress-bar"></div>
+                    </div>
+                </div>
+            </div>
+            <div class="right-half">
+                <div id="logs">
+                    <table class="table table-dark table-striped">
+                        <thead>
+                            <tr>
+                                <th scope="col">Timestamp</th>
+                               
+                            </tr>
+                        </thead>
+                        <tbody id="logTableBody">
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script>
+        let progressBar;
+        
+        async function fetchLogs() {
+            const response = await fetch('/logs');
+            const logs = await response.json();
+            const logTableBody = document.getElementById('logTableBody');
+            logTableBody.innerHTML = '';
+            const logLevels = {};
+            logs.forEach(log => {
+                const row = `<tr>
+                                <td>${log.timestamp}</td>
+                                <td>${log.level}</td>
+                                <td>${log.message}</td>
+                             </tr>`;
+                logTableBody.innerHTML += row;
+                if (!logLevels[log.level]) {
+                    logLevels[log.level] = 0;
+                }
+                logLevels[log.level]++;
+            });
+
+            const ctxBar = document.getElementById('logChart').getContext('2d');
+            if (window.myBarChart) {
+                window.myBarChart.destroy();
+            }
+            window.myBarChart = new Chart(ctxBar, {
+                type: 'bar',
+                data: {
+                    labels: Object.keys(logLevels),
+                    datasets: [{
+                        label: 'Log Level Frequency',
+                        data: Object.values(logLevels),
+                        backgroundColor: [
+                            'rgba(255, 99, 132, 0.2)',
+                            'rgba(54, 162, 235, 0.2)',
+                            'rgba(255, 206, 86, 0.2)',
+                            'rgba(75, 192, 192, 0.2)',
+                            'rgba(153, 102, 255, 0.2)',
+                            'rgba(255, 159, 64, 0.2)'
+                        ],
+                        borderColor: [
+                            'rgba(255, 99, 132, 1)',
+                            'rgba(54, 162, 235, 1)',
+                            'rgba(255, 206, 86, 1)',
+                            'rgba(75, 192, 192, 1)',
+                            'rgba(153, 102, 255, 1)',
+                            'rgba(255, 159, 64, 1)'
+                        ],
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    scales: {
+                        y: {
+                            beginAtZero: true
+                        }
+                    }
+                }
+            });
+
+            const percentageResponse = await fetch('/percentage');
+            const percentageData = await percentageResponse.json();
+            const percentage = percentageData.percentage;
+
+            // Determine color based on percentage
+            let color;
+            if (percentage >= 70) {
+                color = 'green';
+            } else if (percentage >= 40) {
+                color = 'yellow';
+            } else {
+                color = 'red';
+            }
+
+            // Update or create the progress bar
+            if (!progressBar) {
+                progressBar = new ProgressBar.Circle('#progress-bar', {
+                    color: color,
+                    strokeWidth: 10,
+                    trailWidth: 5,
+                    easing: 'easeInOut',
+                    duration: 1400,
+                    text: {
+                        autoStyleContainer: false
+                    },
+                    from: { color: '#FF0000', width: 5 },
+                    to: { color: '#00FF00', width: 10 },
+                    step: function(state, circle) {
+                        circle.path.setAttribute('stroke', state.color);
+                        circle.path.setAttribute('stroke-width', state.width);
+
+                        const value = Math.round(circle.value() * 100);
+                        circle.setText(value + '%');
+                    }
+                });
+
+                progressBar.text.style.fontFamily = '"Raleway", Helvetica, sans-serif';
+                progressBar.text.style.fontSize = '2rem';
+                progressBar.text.style.left='16%'
+                progressBar.text.style.top='67%'
+            }
+
+            progressBar.animate(percentage / 100);  // Number from 0.0 to 1.0
+        }
+
+        window.onload = function() {
+            fetchLogs();
+            setInterval(fetchLogs, 2000); // Refresh every 2 seconds
+        };
+    </script>
+</body>
+</html>
